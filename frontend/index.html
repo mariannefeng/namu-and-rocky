@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Namu & Rocky</title>
+    <title>Namu and Rocky</title>
     <style>
       * {
         box-sizing: border-box;
@@ -19,9 +19,26 @@
       .feed img {
         width: 100%;
         display: block;
-        padding-top: 2rem;
-        padding-left: 2rem;
-        padding-right: 2rem;
+        padding-top: 1rem;
+        padding-left: 1rem;
+        padding-right: 1rem;
+      }
+      @media (min-width: 768px) {
+        .feed {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 2rem;
+          padding: 2rem;
+        }
+        .feed img {
+          padding-top: 0.1rem;
+          padding-left: 0.1rem;
+          padding-right: 0.1rem;
+        }
+        .feed img.landscape,
+        .feed img.span-full {
+          grid-column: 1 / -1;
+        }
       }
       .load {
         padding: 1rem;

@@ -69,6 +69,7 @@ func main() {
 			ext = ".jpg"
 		}
 		key := fmt.Sprintf("%s-%s%s", time.Now().Format("2006-01-02"), time.Now().Format("150405"), ext)
+		log.Printf("new file received: filename=%s key=%s", header.Filename, key)
 
 		_, err = s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
 			Bucket:      aws.String(bucket),
@@ -82,6 +83,7 @@ func main() {
 			http.Error(w, "upload failed", http.StatusInternalServerError)
 			return
 		}
+		log.Printf("successfully uploaded to R2: key=%s", key)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"key": key})

@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/namu.png" type="image/png" id="favicon" />
+    <script>
+      (function () {
+        var link = document.getElementById("favicon");
+        if (link) link.href = Math.random() < 0.5 ? "/namu.png" : "/rocky.png";
+      })();
+    </script>
     <title>Namu and Rocky</title>
     <style>
       * {

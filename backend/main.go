@@ -26,6 +26,7 @@ const MAX_KEYS = 1000
 
 // feedByKey: S3 key -> full URL; used to know if we already have a key when listing again.
 var feedByKey map[string]string
+var feedByKeyMu sync.RWMutex
 
 // requestSeen: client key (query param) -> set of URLs we've already returned to that key.
 var requestSeen map[string]map[string]struct{}
@@ -116,10 +117,12 @@ func main() {
 			return
 		}
 
+		feedByKeyMu.RLock()
 		allURLs := make([]string, 0, len(feedByKey))
 		for _, u := range feedByKey {
 			allURLs = append(allURLs, u)
 		}
+		feedByKeyMu.RUnlock()
 		n := len(allURLs)
 		if n == 0 {
 			w.Header().Set("Content-Type", "application/json")
@@ -166,6 +169,37 @@ func main() {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{"urls": out})
+	})
+
+	http.HandleFunc("/refresh", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		input := &s3.ListObjectsV2Input{
+			Bucket:  aws.String(bucket),
+			MaxKeys: aws.Int32(MAX_KEYS),
+		}
+		out, err := s3Client.ListObjectsV2(context.TODO(), input)
+		if err != nil {
+			log.Printf("refresh list objects: %v", err)
+			http.Error(w, "list failed", http.StatusInternalServerError)
+			return
+		}
+		feedByKeyMu.Lock()
+		for _, obj := range out.Contents {
+			if obj.Key != nil && *obj.Key != "" {
+				key := *obj.Key
+				if _, ok := feedByKey[key]; !ok {
+					feedByKey[key] = publicBaseURL + "/" + key
+				}
+			}
+		}
+		count := len(feedByKey)
+		feedByKeyMu.Unlock()
+		log.Printf("refreshed feed: %d URLs", count)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"count": count})
 	})
 
 	http.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {

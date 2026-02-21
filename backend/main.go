@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,6 +20,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/joho/godotenv"
 )
+
+const MAX_KEYS = 1000
+
+// feedByKey: S3 key -> full URL; used to know if we already have a key when listing again.
+// feedOrder: URLs in list order, for serving (first N or random N).
+var feedByKey map[string]string
+var feedOrder []string
 
 func main() {
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
@@ -52,6 +60,31 @@ func main() {
 		o.BaseEndpoint = aws.String(fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID))
 	})
 
+	// Load feed at startup (up to MAX_KEYS); map lets us skip already-seen keys when we list again later.
+	feedByKey = make(map[string]string)
+	feedOrder = make([]string, 0, MAX_KEYS)
+	{
+		input := &s3.ListObjectsV2Input{
+			Bucket:  aws.String(bucket),
+			MaxKeys: aws.Int32(MAX_KEYS),
+		}
+		out, err := s3Client.ListObjectsV2(context.TODO(), input)
+		if err != nil {
+			log.Fatalf("startup list objects: %v", err)
+		}
+		for _, obj := range out.Contents {
+			if obj.Key != nil && *obj.Key != "" {
+				key := *obj.Key
+				if _, ok := feedByKey[key]; !ok {
+					url := publicBaseURL + "/" + key
+					feedByKey[key] = url
+					feedOrder = append(feedOrder, url)
+				}
+			}
+		}
+		log.Printf("loaded %d feed URLs at startup", len(feedOrder))
+	}
+
 	corsOrigin := os.Getenv("CORS_ORIGIN")
 	if corsOrigin == "" {
 		corsOrigin = "*"
@@ -76,40 +109,28 @@ func main() {
 		}
 		limit := 5
 		if l := r.URL.Query().Get("limit"); l != "" {
-			if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 100 {
+			if n, err := strconv.Atoi(l); err == nil && n > 0 {
 				limit = n
 			}
 		}
-		cursor := r.URL.Query().Get("cursor")
+		random := r.URL.Query().Get("random") == "true"
 
-		input := &s3.ListObjectsV2Input{
-			Bucket:  aws.String(bucket),
-			MaxKeys: aws.Int32(int32(limit)),
+		n := len(feedOrder)
+		if limit > n {
+			limit = n
 		}
-		if cursor != "" {
-			input.ContinuationToken = aws.String(cursor)
-		}
-
-		out, err := s3Client.ListObjectsV2(context.TODO(), input)
-		if err != nil {
-			log.Printf("list objects failed: %v", err)
-			http.Error(w, "list failed", http.StatusInternalServerError)
-			return
-		}
-
-		urls := make([]string, 0, len(out.Contents))
-		for _, obj := range out.Contents {
-			if obj.Key != nil && *obj.Key != "" {
-				urls = append(urls, publicBaseURL+"/"+*obj.Key)
+		urls := make([]string, limit)
+		if random {
+			idx := rand.Perm(n)
+			for i := 0; i < limit; i++ {
+				urls[i] = feedOrder[idx[i]]
 			}
+		} else {
+			copy(urls, feedOrder[:limit])
 		}
 
-		resp := map[string]interface{}{"urls": urls}
-		if out.NextContinuationToken != nil && *out.NextContinuationToken != "" {
-			resp["nextCursor"] = *out.NextContinuationToken
-		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		json.NewEncoder(w).Encode(map[string]interface{}{"urls": urls})
 	})
 
 	http.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {

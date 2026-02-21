@@ -5,6 +5,14 @@ let loading = false;
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
+const posthogKey = import.meta.env.VITE_POSTHOG_API_KEY ?? "";
+if (posthogKey && typeof window.posthog !== "undefined") {
+  window.posthog.init(posthogKey, {
+    api_host: "https://us.i.posthog.com",
+    defaults: "2026-01-30",
+  });
+}
+
 function appendImages(urls) {
   for (const url of urls) {
     const img = document.createElement("img");

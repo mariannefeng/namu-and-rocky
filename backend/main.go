@@ -148,6 +148,9 @@ func main() {
 			}
 			available = append(available[:0], allURLs...)
 		}
+
+		log.Printf("new request: key=%s limit=%d available=%d seen=%d", clientKey, limit, len(available), len(seen))
+
 		count := limit
 		if count > len(available) {
 			count = len(available)

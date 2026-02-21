@@ -14,9 +14,17 @@ function appendImages(urls) {
     feed.appendChild(img);
   }
 }
+function getClientKey() {
+  let key = localStorage.getItem("namu-and-rocky-key");
+  if (!key) {
+    key = crypto.randomUUID();
+    localStorage.setItem("namu-and-rocky-key", key);
+  }
+  return key;
+}
 
 async function fetchPage() {
-  const params = new URLSearchParams({ limit: "4" });
+  const params = new URLSearchParams({ limit: "10", key: getClientKey() });
   const r = await fetch(`${API_BASE}/feed?${params}`);
   if (!r.ok) throw new Error("feed failed");
   return r.json();

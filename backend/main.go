@@ -24,9 +24,8 @@ import (
 const MAX_KEYS = 1000
 
 // feedByKey: S3 key -> full URL; used to know if we already have a key when listing again.
-// feedOrder: URLs in list order, for serving (first N or random N).
+// Feed returns random URLs from this map, capped by limit.
 var feedByKey map[string]string
-var feedOrder []string
 
 func main() {
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
@@ -60,9 +59,7 @@ func main() {
 		o.BaseEndpoint = aws.String(fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID))
 	})
 
-	// Load feed at startup (up to MAX_KEYS); map lets us skip already-seen keys when we list again later.
 	feedByKey = make(map[string]string)
-	feedOrder = make([]string, 0, MAX_KEYS)
 	{
 		input := &s3.ListObjectsV2Input{
 			Bucket:  aws.String(bucket),
@@ -76,13 +73,11 @@ func main() {
 			if obj.Key != nil && *obj.Key != "" {
 				key := *obj.Key
 				if _, ok := feedByKey[key]; !ok {
-					url := publicBaseURL + "/" + key
-					feedByKey[key] = url
-					feedOrder = append(feedOrder, url)
+					feedByKey[key] = publicBaseURL + "/" + key
 				}
 			}
 		}
-		log.Printf("loaded %d feed URLs at startup", len(feedOrder))
+		log.Printf("loaded %d feed URLs at startup", len(feedByKey))
 	}
 
 	corsOrigin := os.Getenv("CORS_ORIGIN")
@@ -113,24 +108,23 @@ func main() {
 				limit = n
 			}
 		}
-		random := r.URL.Query().Get("random") == "true"
 
-		n := len(feedOrder)
+		urls := make([]string, 0, len(feedByKey))
+		for _, u := range feedByKey {
+			urls = append(urls, u)
+		}
+		n := len(urls)
 		if limit > n {
 			limit = n
 		}
-		urls := make([]string, limit)
-		if random {
-			idx := rand.Perm(n)
-			for i := 0; i < limit; i++ {
-				urls[i] = feedOrder[idx[i]]
-			}
-		} else {
-			copy(urls, feedOrder[:limit])
+		idx := rand.Perm(n)
+		out := make([]string, limit)
+		for i := 0; i < limit; i++ {
+			out[i] = urls[idx[i]]
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"urls": urls})
+		json.NewEncoder(w).Encode(map[string]interface{}{"urls": out})
 	})
 
 	http.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {

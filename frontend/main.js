@@ -14,10 +14,12 @@ function appendImages(urls) {
   }
 }
 
+const API_BASE = import.meta.env.VITE_API_URL ?? "";
+
 async function fetchPage(cursor) {
   const params = new URLSearchParams({ limit: "5" });
   if (cursor) params.set("cursor", cursor);
-  const r = await fetch(`/feed?${params}`);
+  const r = await fetch(`${API_BASE}/feed?${params}`);
   if (!r.ok) throw new Error("feed failed");
   return r.json();
 }

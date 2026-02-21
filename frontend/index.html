@@ -1,20 +1,38 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Namu & Rocky</title>
-  <style>
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, sans-serif; }
-    .feed { display: flex; flex-direction: column; }
-    .feed img { width: 100%; display: block; vertical-align: top; }
-    .load { padding: 1rem; text-align: center; color: #666; }
-  </style>
-</head>
-<body>
-  <main class="feed" id="feed"></main>
-  <div class="load" id="load" hidden>Loading…</div>
-  <script type="module" src="/main.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Namu & Rocky</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+      }
+      .feed {
+        display: flex;
+        flex-direction: column;
+      }
+      .feed img {
+        width: 100%;
+        display: block;
+        padding-top: 2rem;
+        padding-left: 2rem;
+        padding-right: 2rem;
+      }
+      .load {
+        padding: 1rem;
+        text-align: center;
+        color: #666;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="feed" id="feed"></main>
+    <div class="load" id="load" hidden>Loading…</div>
+    <script type="module" src="/main.js"></script>
+  </body>
 </html>

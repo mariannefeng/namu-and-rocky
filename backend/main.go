@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -24,8 +25,11 @@ import (
 const MAX_KEYS = 1000
 
 // feedByKey: S3 key -> full URL; used to know if we already have a key when listing again.
-// Feed returns random URLs from this map, capped by limit.
 var feedByKey map[string]string
+
+// requestSeen: client key (query param) -> set of URLs we've already returned to that key.
+var requestSeen map[string]map[string]struct{}
+var requestSeenMu sync.Mutex
 
 func main() {
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
@@ -79,14 +83,11 @@ func main() {
 		}
 		log.Printf("loaded %d feed URLs at startup", len(feedByKey))
 	}
+	requestSeen = make(map[string]map[string]struct{})
 
-	corsOrigin := os.Getenv("CORS_ORIGIN")
-	if corsOrigin == "" {
-		corsOrigin = "*"
-	}
 	corsMiddleware := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Access-Control-Allow-Origin", corsOrigin)
+			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 			if r.Method == http.MethodOptions {
@@ -109,19 +110,56 @@ func main() {
 			}
 		}
 
-		urls := make([]string, 0, len(feedByKey))
-		for _, u := range feedByKey {
-			urls = append(urls, u)
+		clientKey := r.URL.Query().Get("key")
+		if clientKey == "" {
+			http.Error(w, "key required", http.StatusBadRequest)
+			return
 		}
-		n := len(urls)
+
+		allURLs := make([]string, 0, len(feedByKey))
+		for _, u := range feedByKey {
+			allURLs = append(allURLs, u)
+		}
+		n := len(allURLs)
+		if n == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"urls": []string{}})
+			return
+		}
 		if limit > n {
 			limit = n
 		}
-		idx := rand.Perm(n)
-		out := make([]string, limit)
-		for i := 0; i < limit; i++ {
-			out[i] = urls[idx[i]]
+
+		requestSeenMu.Lock()
+		seen, ok := requestSeen[clientKey]
+		if !ok {
+			seen = make(map[string]struct{})
+			requestSeen[clientKey] = seen
 		}
+		available := make([]string, 0, n)
+		for _, u := range allURLs {
+			if _, sent := seen[u]; !sent {
+				available = append(available, u)
+			}
+		}
+		if len(available) == 0 {
+			for u := range seen {
+				delete(seen, u)
+			}
+			available = append(available[:0], allURLs...)
+		}
+		count := limit
+		if count > len(available) {
+			count = len(available)
+		}
+		idx := rand.Perm(len(available))
+		out := make([]string, count)
+		for i := 0; i < count; i++ {
+			u := available[idx[i]]
+			out[i] = u
+			seen[u] = struct{}{}
+		}
+		requestSeenMu.Unlock()
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{"urls": out})

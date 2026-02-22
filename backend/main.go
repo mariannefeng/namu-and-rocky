@@ -171,37 +171,6 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]interface{}{"urls": out})
 	})
 
-	http.HandleFunc("/refresh", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		input := &s3.ListObjectsV2Input{
-			Bucket:  aws.String(bucket),
-			MaxKeys: aws.Int32(MAX_KEYS),
-		}
-		out, err := s3Client.ListObjectsV2(context.TODO(), input)
-		if err != nil {
-			log.Printf("refresh list objects: %v", err)
-			http.Error(w, "list failed", http.StatusInternalServerError)
-			return
-		}
-		feedByKeyMu.Lock()
-		for _, obj := range out.Contents {
-			if obj.Key != nil && *obj.Key != "" {
-				key := *obj.Key
-				if _, ok := feedByKey[key]; !ok {
-					feedByKey[key] = publicBaseURL + "/" + key
-				}
-			}
-		}
-		count := len(feedByKey)
-		feedByKeyMu.Unlock()
-		log.Printf("refreshed feed: %d URLs", count)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"count": count})
-	})
-
 	http.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -242,6 +211,9 @@ func main() {
 			http.Error(w, "upload failed", http.StatusInternalServerError)
 			return
 		}
+		feedByKeyMu.Lock()
+		feedByKey[key] = publicBaseURL + "/" + key
+		feedByKeyMu.Unlock()
 		log.Printf("successfully uploaded to R2: key=%s", key)
 
 		w.Header().Set("Content-Type", "application/json")
@@ -252,22 +224,6 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-
-	go func() {
-		time.Sleep(2 * time.Second) // let server start listening
-		ticker := time.NewTicker(5 * time.Minute)
-		defer ticker.Stop()
-		refreshURL := "http://127.0.0.1:" + port + "/refresh"
-		for ; true; <-ticker.C {
-			resp, err := http.Get(refreshURL)
-			if err != nil {
-				log.Printf("background refresh: %v", err)
-			} else {
-				resp.Body.Close()
-			}
-		}
-	}()
-
 	log.Printf("listening on http://localhost:%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, corsMiddleware(http.DefaultServeMux)))
 }

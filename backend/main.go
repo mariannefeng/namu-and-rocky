@@ -252,6 +252,22 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
+
+	go func() {
+		time.Sleep(2 * time.Second) // let server start listening
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		refreshURL := "http://127.0.0.1:" + port + "/refresh"
+		for ; true; <-ticker.C {
+			resp, err := http.Get(refreshURL)
+			if err != nil {
+				log.Printf("background refresh: %v", err)
+			} else {
+				resp.Body.Close()
+			}
+		}
+	}()
+
 	log.Printf("listening on http://localhost:%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, corsMiddleware(http.DefaultServeMux)))
 }

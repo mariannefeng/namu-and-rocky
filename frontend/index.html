@@ -44,6 +44,118 @@
         text-align: center;
         color: #666;
       }
+      body {
+        padding-bottom: 140px;
+      }
+      body.banner-hidden {
+        padding-bottom: 0;
+      }
+      .vote-bar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: rgba(255, 255, 255, 0.9);
+        color: #1a1a1a;
+        padding: 2.5rem 1rem 1.25rem;
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
+        z-index: 100;
+      }
+      .vote-bar.banner-hidden {
+        display: none;
+      }
+      .vote-bar .bar-dismiss {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        padding: 0.2rem 0.45rem;
+        font-size: 1rem;
+        font-weight: bold;
+        background: transparent;
+        color: inherit;
+        border: 1px solid rgba(0, 0, 0, 0.2);
+        border-radius: 6px;
+        cursor: pointer;
+        opacity: 0.8;
+      }
+      .vote-bar .bar-dismiss:hover {
+        opacity: 1;
+      }
+      .vote-bar .bar-dismiss {
+        display: none;
+      }
+      .vote-bar.has-voted .bar-dismiss {
+        display: block;
+      }
+      .vote-bar.has-voted p {
+        display: none;
+      }
+      .vote-bar p {
+        margin: 0 0 0.75rem;
+        font-size: 0.95rem;
+        text-align: center;
+      }
+      .vote-bar .buttons {
+        display: flex;
+        gap: 0.75rem;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      .vote-bar button {
+        padding: 0.6rem 1.25rem;
+        font-size: 1rem;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        background: black;
+        color: white;
+      }
+      .vote-bar button.consensus {
+        background: green;
+        color: #fff;
+        display: none;
+      }
+      .vote-bar.has-voted button,
+      .vote-bar.has-voted button {
+        display: none;
+      }
+      .vote-bar.has-voted button.consensus {
+        display: inline-block;
+      }
+      .vote-bar .consensus-results {
+        display: none;
+        margin-top: 0;
+        padding-top: 0;
+        border-top: none;
+      }
+      .vote-bar .consensus-results.visible {
+        display: block;
+      }
+      .vote-bar.consensus-visible .buttons {
+        display: none;
+      }
+      .vote-bar .consensus-results .bar-wrap {
+        margin-bottom: 0.6rem;
+      }
+      .vote-bar .consensus-results .bar-label {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.85rem;
+        margin-bottom: 0.2rem;
+      }
+      .vote-bar .consensus-results .bar-track {
+        height: 22px;
+        background: rgba(0, 0, 0, 0.15);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      .vote-bar .consensus-results .bar-fill {
+        height: 100%;
+        border-radius: 6px;
+        transition: width 0.3s ease;
+        background: black;
+      }
     </style>
     <script>
       !(function (t, e) {
@@ -101,6 +213,29 @@
   <body>
     <main class="feed" id="feed"></main>
     <div class="load" id="load" hidden>Loading…</div>
+
+    <div class="vote-bar" id="vote-bar">
+      <button
+        type="button"
+        class="bar-dismiss"
+        id="bar-dismiss"
+        aria-label="Hide bar"
+      >
+        X
+      </button>
+      <p class="vote-question">Is Namu the tuxedo or is Rocky the tuxedo?</p>
+      <div class="buttons">
+        <button type="button" id="btn-namu">Namu</button>
+        <button type="button" id="btn-rocky">Rocky</button>
+        <button type="button" class="consensus" id="btn-consensus">
+          See the consensus
+        </button>
+      </div>
+      <div class="consensus-results" id="consensus-results">
+        <div id="consensus-chart"></div>
+      </div>
+    </div>
+
     <script type="module" src="/main.js"></script>
   </body>
 </html>

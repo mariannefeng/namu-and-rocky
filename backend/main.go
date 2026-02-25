@@ -19,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 )
 
@@ -31,6 +32,12 @@ var feedByKeyMu sync.RWMutex
 // requestSeen: client key (query param) -> set of URLs we've already returned to that key.
 var requestSeen map[string]map[string]struct{}
 var requestSeenMu sync.Mutex
+
+// voteRequest is the JSON body for POST /vote.
+type voteRequest struct {
+	Key          string `json:"key"`            // client identifier (who is voting)
+	NamuIsTuxedo bool   `json:"namu_is_tuxedo"` // true if voter thinks namu is the tuxedo cat
+}
 
 func main() {
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
@@ -51,6 +58,35 @@ func main() {
 		log.Fatal("R2_PUBLIC_BASE_URL must be set (e.g. https://pub-xxx.r2.dev or custom domain)")
 	}
 	publicBaseURL = strings.TrimSuffix(publicBaseURL, "/")
+
+	// PostgreSQL: credentials via env vars (do not commit .env; in production consider a secret manager).
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		log.Fatal("DATABASE_URL must be set for the voting database")
+	}
+	dbPool, err := pgxpool.New(context.Background(), databaseURL)
+	if err != nil {
+		log.Fatalf("postgres connect: %v", err)
+	}
+	defer dbPool.Close()
+	if err := dbPool.Ping(context.Background()); err != nil {
+		log.Fatalf("postgres ping: %v", err)
+	}
+	_, err = dbPool.Exec(context.Background(), `
+		CREATE TABLE IF NOT EXISTS votes (
+			created_at TIMESTAMPTZ DEFAULT NOW(),
+			updated_at TIMESTAMPTZ DEFAULT NOW(),
+			key TEXT NOT NULL,
+			namu_is_tuxedo BOOLEAN DEFAULT FALSE,
+			vote_count INTEGER DEFAULT 0,
+
+			PRIMARY KEY (key)
+		);
+	`)
+	if err != nil {
+		log.Fatalf("create votes table: %v", err)
+	}
+	log.Print("postgres connected and votes table ready")
 
 	cfg, err := config.LoadDefaultConfig(context.TODO(),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKeyID, secretKey, "")),
@@ -218,6 +254,76 @@ func main() {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"key": key})
+	})
+
+	http.HandleFunc("/vote", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req voteRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if req.Key == "" {
+			http.Error(w, "key required", http.StatusBadRequest)
+			return
+		}
+		_, err := dbPool.Exec(context.Background(),
+			`INSERT INTO votes (key, namu_is_tuxedo, vote_count) VALUES ($1, $2, 1)
+			 ON CONFLICT (key) DO UPDATE SET namu_is_tuxedo = $2, updated_at = NOW(), vote_count = votes.vote_count + 1`,
+			req.Key, req.NamuIsTuxedo)
+		if err != nil {
+			log.Printf("vote insert: %v", err)
+			http.Error(w, "vote failed", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"ok": "voted"})
+	})
+
+	http.HandleFunc("/consensus", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		rows, err := dbPool.Query(context.Background(), `
+			SELECT namu_is_tuxedo, COUNT(*) AS cnt
+			FROM votes
+			GROUP BY namu_is_tuxedo
+		`)
+		if err != nil {
+			log.Printf("consensus query: %v", err)
+			http.Error(w, "consensus failed", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+		var namuTuxedoCount, namuNotTuxedoCount int64
+		for rows.Next() {
+			var isTuxedo bool
+			var cnt int64
+			if err := rows.Scan(&isTuxedo, &cnt); err != nil {
+				log.Printf("consensus scan: %v", err)
+				http.Error(w, "consensus failed", http.StatusInternalServerError)
+				return
+			}
+			if isTuxedo {
+				namuTuxedoCount = cnt
+			} else {
+				namuNotTuxedoCount = cnt
+			}
+		}
+		if err := rows.Err(); err != nil {
+			log.Printf("consensus rows: %v", err)
+			http.Error(w, "consensus failed", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"namu_is_tuxedo":     namuTuxedoCount,
+			"namu_is_not_tuxedo": namuNotTuxedoCount,
+		})
 	})
 
 	port := os.Getenv("PORT")

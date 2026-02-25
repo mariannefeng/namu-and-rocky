@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -19,8 +20,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 const MAX_KEYS = 1000
@@ -64,15 +65,15 @@ func main() {
 	if databaseURL == "" {
 		log.Fatal("DATABASE_URL must be set for the voting database")
 	}
-	dbPool, err := pgxpool.New(context.Background(), databaseURL)
+	db, err := sql.Open("postgres", databaseURL)
 	if err != nil {
 		log.Fatalf("postgres connect: %v", err)
 	}
-	defer dbPool.Close()
-	if err := dbPool.Ping(context.Background()); err != nil {
+	defer db.Close()
+	if err := db.Ping(); err != nil {
 		log.Fatalf("postgres ping: %v", err)
 	}
-	_, err = dbPool.Exec(context.Background(), `
+	_, err = db.ExecContext(context.Background(), `
 		CREATE TABLE IF NOT EXISTS votes (
 			created_at TIMESTAMPTZ DEFAULT NOW(),
 			updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -270,7 +271,7 @@ func main() {
 			http.Error(w, "key required", http.StatusBadRequest)
 			return
 		}
-		_, err := dbPool.Exec(context.Background(),
+		_, err := db.ExecContext(context.Background(),
 			`INSERT INTO votes (key, namu_is_tuxedo, vote_count) VALUES ($1, $2, 1)
 			 ON CONFLICT (key) DO UPDATE SET namu_is_tuxedo = $2, updated_at = NOW(), vote_count = votes.vote_count + 1`,
 			req.Key, req.NamuIsTuxedo)
@@ -288,7 +289,7 @@ func main() {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		rows, err := dbPool.Query(context.Background(), `
+		rows, err := db.QueryContext(context.Background(), `
 			SELECT namu_is_tuxedo, COUNT(*) AS cnt
 			FROM votes
 			GROUP BY namu_is_tuxedo

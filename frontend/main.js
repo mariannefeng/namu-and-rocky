@@ -32,7 +32,7 @@ function getClientKey() {
 }
 
 async function fetchPage() {
-  const params = new URLSearchParams({ limit: "10", key: getClientKey() });
+  const params = new URLSearchParams({ limit: "4", key: getClientKey() });
   const r = await fetch(`${API_BASE}/feed?${params}`);
   if (!r.ok) throw new Error("feed failed");
   return r.json();

@@ -1,9 +1,33 @@
-const feed = document.getElementById("feed");
+const feedCol0 = document.getElementById("feed-col-0");
+const feedCol1 = document.getElementById("feed-col-1");
 const loadEl = document.getElementById("load");
+
+const isDesktop = window.matchMedia("(min-width: 768px)");
+let roundRobin = 0;
+let firstColumn = true;
+
+function columnForNextImage() {
+  // on mobile, always use the first column
+  if (!isDesktop.matches) return feedCol0;
+
+  const col = firstColumn ? feedCol0 : feedCol1;
+  firstColumn = !firstColumn;
+  return col;
+}
 
 let loading = false;
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
+
+/** Cloudflare Image Resizing: assets.namuandrocky.com/cdn-cgi/image/<opts>/<rest-of-path> */
+const CF_SRCSET_WIDTHS = [320, 768, 1200];
+
+function cloudflareImageUrl(originalUrl, width) {
+  const u = new URL(originalUrl);
+  const path = u.pathname.startsWith("/") ? u.pathname.slice(1) : u.pathname;
+  const opts = `fit=scale-down,width=${width},format=auto`;
+  return `${u.origin}/cdn-cgi/image/${opts}/${path}`;
+}
 
 const posthogKey = import.meta.env.VITE_POSTHOG_API_KEY ?? "";
 if (posthogKey && typeof window.posthog !== "undefined") {
@@ -16,10 +40,15 @@ if (posthogKey && typeof window.posthog !== "undefined") {
 function appendImages(urls) {
   for (const url of urls) {
     const img = document.createElement("img");
-    img.src = url;
+    const srcset = CF_SRCSET_WIDTHS.map(
+      (w) => `${cloudflareImageUrl(url, w)} ${w}w`,
+    ).join(", ");
+    img.srcset = srcset;
+    img.sizes = "(min-width: 768px) 50vw, 100vw";
+    img.src = cloudflareImageUrl(url, 768);
     img.loading = "lazy";
     img.alt = "";
-    feed.appendChild(img);
+    columnForNextImage().appendChild(img);
   }
 }
 function getClientKey() {
@@ -32,7 +61,7 @@ function getClientKey() {
 }
 
 async function fetchPage() {
-  const params = new URLSearchParams({ limit: "4", key: getClientKey() });
+  const params = new URLSearchParams({ limit: "10", key: getClientKey() });
   const r = await fetch(`${API_BASE}/feed?${params}`);
   if (!r.ok) throw new Error("feed failed");
   return r.json();
